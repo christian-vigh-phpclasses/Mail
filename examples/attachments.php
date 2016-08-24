@@ -47,7 +47,6 @@ END;
 	$mail	=  new Mail ( $sender, $recipient, $subject, $text, $html, dirname ( __FILE__ ) ) ;
 	$mail -> AddAttachment ( dirname ( __FILE__ ) . '/data/file1.txt' ) ;
 	$mail -> AddAttachment ( dirname ( __FILE__ ) . '/data/file2.txt' ) ;
-	$mail -> AddAttachment ( dirname ( __FILE__ ) . '/data/zipdata.zip' ) ;
 
 	$mail -> Send ( ) ;
 
