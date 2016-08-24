@@ -1,0 +1,1474 @@
+<?php
+/**************************************************************************************************************
+
+    NAME
+        Mail.phpclass
+
+    DESCRIPTION
+        A class for sending emails.
+
+    AUTHOR
+        Christian Vigh, 10/2015.
+
+    HISTORY
+    [Version : 2.0]	[Date : 2015/10/29]     [Author : CV]
+        Initial version, ported from the version 1 survivor of the Thrak library.
+
+    [Version : 2.0.1]	[Date : 2015/11/02]     [Author : CV]
+	. Changed the MailAttachment::GetMimeContents() methods because the attachment icon was missing in
+	  messenging clients. This was due to a missing 'Content-disposition: attachment' header.
+
+    [Version : 2.0.2]	[Date : 2015/11/02]     [Author : CV]
+	. Changed GetMimeHeaders() so that the 'To:' header will not be sent, since it is already done by the
+	  mail() function.
+
+    [Version : 2.1]	[Date : 2016/08/24]     [Author : CV]
+	. Added the LoadHtml() method, to load html contents from an external file.
+
+ **************************************************************************************************************/
+class  MailException		extends  \RuntimeException { } ;
+
+// This package requires the following existing package :
+//	http://www.phpclasses.org/package/9336-PHP-Match-MSDOS-UNIX-patterns-with-regular-expressions.html
+// The source code has been provided here for convenience, but it may not be the latest version
+require_once ( dirname ( __FILE__ ) . '/Regex.class.php' ) ;
+
+/*==============================================================================================================
+
+    MailObject -
+        Base class for the Mail and Mail attachments classes. Mainly defines properties that should remain
+	accessible only by the mail-related classes.
+
+  ==============================================================================================================*/
+class  MailObject
+   {
+	// Max text line length in the ascii part of an email
+	static protected	$MaxTextLength			=  76 ;
+	// String introducing mime contents
+	static protected 	$MimeIntroduction		=  'This is a multi-part message in MIME format.' ;
+	// End of line string
+	static protected	$EOL				=  "\r\n" ;
+	// Mime types
+	static protected 	$MimeTypes			=
+	   [
+		'3dm' 		=> 'x-world/x-3dmf',
+		'3dmf' 		=> 'x-world/x-3dmf',
+		'a' 		=> 'application/octet-stream',
+		'aab' 		=> 'application/x-authorware-bin',
+		'aam' 		=> 'application/x-authorware-map',
+		'aas' 		=> 'application/x-authorware-seg',
+		'abc' 		=> 'text/vnd.abc',
+		'acgi' 		=> 'text/html',
+		'afl' 		=> 'video/animaflex',
+		'ai' 		=> 'application/postscript',
+		'aif' 		=> 'audio/x-aiff',
+		'aifc' 		=> 'audio/x-aiff',
+		'aiff' 		=> 'audio/x-aiff',
+		'aim' 		=> 'application/x-aim',
+		'aip' 		=> 'text/x-audiosoft-intra',
+		'ani' 		=> 'application/x-navi-animation',
+		'aos' 		=> 'application/x-nokia-9000-communicator-add-on-software',
+		'aps' 		=> 'application/mime',
+		'arc' 		=> 'application/octet-stream',
+		'arj' 		=> 'application/octet-stream',
+		'art' 		=> 'image/x-jg',
+		'asf' 		=> 'video/x-ms-asf',
+		'asm' 		=> 'text/x-asm',
+		'asp' 		=> 'text/asp',
+		'asx' 		=> 'video/x-ms-asf',
+		'au' 		=> 'audio/basic',
+		'au' 		=> 'audio/x-au',
+		'avi' 		=> 'video/avi',
+		'avs' 		=> 'video/avs-video',
+		'bcpio' 	=> 'application/x-bcpio',
+		'bin' 		=> 'application/octet-stream',
+		'bm' 		=> 'image/bmp',
+		'bmp' 		=> 'image/bmp',
+		'boo' 		=> 'application/book',
+		'book' 		=> 'application/book',
+		'boz' 		=> 'application/x-bzip2',
+		'bsh' 		=> 'application/x-bsh',
+		'bz' 		=> 'application/x-bzip',
+		'bz2' 		=> 'application/x-bzip2',
+		'c' 		=> 'text/plain',
+		'c++' 		=> 'text/plain',
+		'cat' 		=> 'application/vnd.ms-pki.seccat',
+		'cc' 		=> 'text/plain',
+		'ccad' 		=> 'application/clariscad',
+		'cco' 		=> 'application/x-cocoa',
+		'cdf' 		=> 'application/x-cdf',
+		'cdf' 		=> 'application/x-netcdf',
+		'cer' 		=> 'application/x-x509-ca-cert',
+		'cha' 		=> 'application/x-chat',
+		'chat' 		=> 'application/x-chat',
+		'class' 	=> 'application/java',
+		'com' 		=> 'application/octet-stream',
+		'conf' 		=> 'text/plain',
+		'cpio' 		=> 'application/x-cpio',
+		'cpp' 		=> 'text/x-c',
+		'cpt' 		=> 'application/x-compactpro',
+		'cpt' 		=> 'application/x-cpt',
+		'crl' 		=> 'application/pkcs-crl',
+		'crt' 		=> 'application/pkix-cert',
+		'csh' 		=> 'text/x-script.csh',
+		'css' 		=> 'text/css',
+		'csv' 		=> 'text/csv',
+		'cxx' 		=> 'text/plain',
+		'dcr' 		=> 'application/x-director',
+		'deepv' 	=> 'application/x-deepv',
+		'def' 		=> 'text/plain',
+		'der' 		=> 'application/x-x509-ca-cert',
+		'dir' 		=> 'application/x-director',
+		'dl' 		=> 'video/x-dl',
+		'doc' 		=> 'application/msword',
+		'dot' 		=> 'application/msword',
+		'dp' 		=> 'application/commonground',
+		'drw' 		=> 'application/drafting',
+		'dump' 		=> 'application/octet-stream',
+		'dv' 		=> 'video/x-dv',
+		'dvi' 		=> 'application/x-dvi',
+		'dwf' 		=> 'model/vnd.dwf',
+		'dwg' 		=> 'image/x-dwg',
+		'dxf' 		=> 'application/dxf',
+		'el' 		=> 'text/x-script.elisp',
+		'elc' 		=> 'application/x-elc',
+		'env' 		=> 'application/x-envoy',
+		'eps' 		=> 'application/postscript',
+		'es' 		=> 'application/x-esrehber',
+		'etx' 		=> 'text/x-setext',
+		'evy' 		=> 'application/x-envoy',
+		'exe' 		=> 'application/octet-stream',
+		'f' 		=> 'text/x-fortran',
+		'f77' 		=> 'text/x-fortran',
+		'f90' 		=> 'text/plain',
+		'f90' 		=> 'text/x-fortran',
+		'fdf' 		=> 'application/vnd.fdf',
+		'fif' 		=> 'image/fif',
+		'fli' 		=> 'video/fli',
+		'flo' 		=> 'image/florian',
+		'flx' 		=> 'text/vnd.fmi.flexstor',
+		'fmf' 		=> 'video/x-atomic3d-feature',
+		'for' 		=> 'text/x-fortran',
+		'fpx' 		=> 'image/vnd.fpx',
+		'frl' 		=> 'application/freeloader',
+		'funk' 		=> 'audio/make',
+		'g' 		=> 'text/plain',
+		'g3' 		=> 'image/g3fax',
+		'gif' 		=> 'image/gif',
+		'gl' 		=> 'video/x-gl',
+		'gsd' 		=> 'audio/x-gsm',
+		'gsm' 		=> 'audio/x-gsm',
+		'gsp' 		=> 'application/x-gsp',
+		'gss' 		=> 'application/x-gss',
+		'gtar' 		=> 'application/x-gtar',
+		'gz' 		=> 'application/x-gzip',
+		'gzip' 		=> 'application/x-gzip',
+		'h' 		=> 'text/plain',
+		'hdf' 		=> 'application/x-hdf',
+		'help' 		=> 'application/x-helpfile',
+		'hgl' 		=> 'application/vnd.hp-hpgl',
+		'hh' 		=> 'text/plain',
+		'hlb' 		=> 'text/x-script',
+		'hlp' 		=> 'application/hlp',
+		'hpg' 		=> 'application/vnd.hp-hpgl',
+		'hpgl' 		=> 'application/vnd.hp-hpgl',
+		'hqx' 		=> 'application/binhex',
+		'hta' 		=> 'application/hta',
+		'htc' 		=> 'text/x-component',
+		'htm' 		=> 'text/html',
+		'html' 		=> 'text/html',
+		'htmls' 	=> 'text/html',
+		'htt' 		=> 'text/webviewhtml',
+		'htx' 		=> 'text/html',
+		'ice' 		=> 'x-conference/x-cooltalk',
+		'ico' 		=> 'image/x-icon',
+		'idc' 		=> 'text/plain',
+		'ief' 		=> 'image/ief',
+		'iefs' 		=> 'image/ief',
+		'iges' 		=> 'application/iges',
+		'igs' 		=> 'application/iges',
+		'imap' 		=> 'application/x-httpd-imap',
+		'inf' 		=> 'application/inf',
+		'ins' 		=> 'application/x-internett-signup',
+		'ip' 		=> 'application/x-ip2',
+		'isu' 		=> 'video/x-isvideo',
+		'it' 		=> 'audio/it',
+		'iv' 		=> 'application/x-inventor',
+		'ivr' 		=> 'i-world/i-vrml',
+		'ivy' 		=> 'application/x-livescreen',
+		'jam' 		=> 'audio/x-jam',
+		'jav' 		=> 'text/plain',
+		'java' 		=> 'text/plain',
+		'jcm' 		=> 'application/x-java-commerce',
+		'jfif' 		=> 'image/jpeg',
+		'jfif' 		=> 'image/pjpeg',
+		'jfif-tbnl' 	=> 'image/jpeg',
+		'jpe' 		=> 'image/jpeg',
+		'jpeg' 		=> 'image/jpeg',
+		'jpg' 		=> 'image/jpeg',
+		'jps' 		=> 'image/x-jps',
+		'js' 		=> 'application/x-javascript',
+		'jut' 		=> 'image/jutvision',
+		'kar' 		=> 'audio/midi',
+		'kar' 		=> 'music/x-karaoke',
+		'ksh' 		=> 'text/x-script.ksh',
+		'la' 		=> 'audio/nspaudio',
+		'lam' 		=> 'audio/x-liveaudio',
+		'latex' 	=> 'application/x-latex',
+		'lha' 		=> 'application/octet-script',
+		'lhx' 		=> 'application/octet-stream',
+		'list' 		=> 'text/plain',
+		'lma' 		=> 'audio/x-nspaudio',
+		'log' 		=> 'text/plain',
+		'lsp' 		=> 'text/x-script.lisp',
+		'lst' 		=> 'text/plain',
+		'lsx' 		=> 'text/x-la-asf',
+		'ltx' 		=> 'application/x-latex',
+		'lzh' 		=> 'application/octet-stream',
+		'lzx' 		=> 'application/octet-stream',
+		'm' 		=> 'text/plain',
+		'm1v' 		=> 'video/mpeg',
+		'm2a' 		=> 'audio/mpeg',
+		'm2v' 		=> 'video/mpeg',
+		'm3u' 		=> 'audio/x-mpequrl',
+		'man' 		=> 'application/x-troff-man',
+		'map' 		=> 'application/x-navimap',
+		'mar' 		=> 'text/plain',
+		'mbd' 		=> 'application/mbedlet',
+		'mc$' 		=> 'application/x-magic-cap-package-1.0',
+		'mcd' 		=> 'application/x-mathcad',
+		'mcf' 		=> 'image/vasa',
+		'mcp' 		=> 'application/netmc',
+		'me' 		=> 'application/x-troff-me',
+		'mht' 		=> 'message/rfc822',
+		'mhtml' 	=> 'message/rfc822',
+		'mid' 		=> 'application/x-midi',
+		'midi' 		=> 'application/x-midi',
+		'midi' 		=> 'audio/midi',
+		'mif' 		=> 'application/x-mif',
+		'mime' 		=> 'message/rfc822',
+		'mime' 		=> 'www/mime',
+		'mjf' 		=> 'audio/x-vnd.audioexplosion.mjuicemediafile',
+		'mjpg' 		=> 'video/x-motion-jpeg',
+		'mm' 		=> 'application/base64',
+		'mme' 		=> 'application/base64',
+		'mod' 		=> 'audio/mod',
+		'mod' 		=> 'audio/x-mod',
+		'moov' 		=> 'video/quicktime',
+		'mov' 		=> 'video/quicktime',
+		'movie' 	=> 'video/x-sgi-movie',
+		'mp2' 		=> 'audio/mpeg',
+		'mp3' 		=> 'audio/mpeg3',
+		'mpa' 		=> 'video/mpeg',
+		'mpc' 		=> 'application/x-project',
+		'mpe' 		=> 'video/mpeg',
+		'mpeg' 		=> 'video/mpeg',
+		'mpg' 		=> 'video/mpeg',
+		'mpga' 		=> 'audio/mpeg',
+		'mpp' 		=> 'application/vnd.ms-project',
+		'mpt' 		=> 'application/x-project',
+		'mpv' 		=> 'application/x-project',
+		'mpx' 		=> 'application/x-project',
+		'mrc' 		=> 'application/marc',
+		'ms' 		=> 'application/x-troff-ms',
+		'mv' 		=> 'video/x-sgi-movie',
+		'my' 		=> 'audio/make',
+		'mzz' 		=> 'application/x-vnd.audioexplosion.mzz',
+		'nap' 		=> 'image/naplps',
+		'naplps' 	=> 'image/naplps',
+		'nc' 		=> 'application/x-netcdf',
+		'ncm' 		=> 'application/vnd.nokia.configuration-message',
+		'nif' 		=> 'image/x-niff',
+		'niff' 		=> 'image/x-niff',
+		'nix' 		=> 'application/x-mix-transfer',
+		'nsc' 		=> 'application/x-conference',
+		'nvd' 		=> 'application/x-navidoc',
+		'o' 		=> 'application/octet-stream',
+		'oda' 		=> 'application/oda',
+		'omc' 		=> 'application/x-omc',
+		'omcd' 		=> 'application/x-omcdatamaker',
+		'omcr' 		=> 'application/x-omcregerator',
+		'p' 		=> 'text/x-pascal',
+		'p10' 		=> 'application/x-pkcs10',
+		'p12' 		=> 'application/x-pkcs12',
+		'p7a' 		=> 'application/x-pkcs7-signature',
+		'p7c' 		=> 'application/x-pkcs7-mime',
+		'p7m' 		=> 'application/x-pkcs7-mime',
+		'p7r' 		=> 'application/x-pkcs7-certreqresp',
+		'p7s' 		=> 'application/pkcs7-signature',
+		'part' 		=> 'application/pro_eng',
+		'pas' 		=> 'text/pascal',
+		'pbm' 		=> 'image/x-portable-bitmap',
+		'pcl' 		=> 'application/vnd.hp-pcl',
+		'pct' 		=> 'image/x-pict',
+		'pcx' 		=> 'image/x-pcx',
+		'pdb' 		=> 'chemical/x-pdb',
+		'pdf' 		=> 'application/pdf',
+		'pfunk' 	=> 'audio/make',
+		'pgm' 		=> 'image/x-portable-greymap',
+		'pic' 		=> 'image/pict',
+		'pkg' 		=> 'application/x-newton-compatible-pkg',
+		'pko' 		=> 'application/vnd.ms-pki.pko',
+		'pl' 		=> 'text/plain',
+		'plx' 		=> 'application/x-pixclscript',
+		'pm' 		=> 'text/x-script.perl-module',
+		'pm4' 		=> 'application/x-pagemaker',
+		'pm5' 		=> 'application/x-pagemaker',
+		'png' 		=> 'image/png',
+		'pnm' 		=> 'image/x-portable-anymap',
+		'pot' 		=> 'application/vnd.ms-powerpoint',
+		'pov' 		=> 'model/x-pov',
+		'ppa' 		=> 'application/vnd.ms-powerpoint',
+		'ppm' 		=> 'image/x-portable-pixmap',
+		'pps' 		=> 'application/vnd.ms-powerpoint',
+		'ppt' 		=> 'application/vnd.ms-powerpoint',
+		'ppz' 		=> 'application/mspowerpoint',
+		'pre' 		=> 'application/x-freelance',
+		'prt' 		=> 'application/pro_eng',
+		'ps' 		=> 'application/postscript',
+		'psd' 		=> 'application/octet-stream',
+		'pvu' 		=> 'paleovu/x-pv',
+		'pwz' 		=> 'application/vnd.ms-powerpoint',
+		'py' 		=> 'text/x-script.phyton',
+		'pyc' 		=> 'application/x-bytecode.python',
+		'qcp' 		=> 'audio/vnd.qcelp',
+		'qd3' 		=> 'x-world/x-3dmf',
+		'qd3d' 		=> 'x-world/x-3dmf',
+		'qif' 		=> 'image/x-quicktime',
+		'qt' 		=> 'video/quicktime',
+		'qtc' 		=> 'video/x-qtc',
+		'qti' 		=> 'image/x-quicktime',
+		'qtif' 		=> 'image/x-quicktime',
+		'ra' 		=> 'audio/x-pn-realaudio',
+		'ram' 		=> 'audio/x-pn-realaudio',
+		'ras' 		=> 'image/cmu-raster',
+		'rast' 		=> 'image/cmu-raster',
+		'rexx' 		=> 'text/x-script.rexx',
+		'rf' 		=> 'image/vnd.rn-realflash',
+		'rgb' 		=> 'image/x-rgb',
+		'rm' 		=> 'application/vnd.rn-realmedia',
+		'rmi' 		=> 'audio/mid',
+		'rmm' 		=> 'audio/x-pn-realaudio',
+		'rmp' 		=> 'audio/x-pn-realaudio',
+		'rng' 		=> 'application/vnd.nokia.ringing-tone',
+		'rnx' 		=> 'application/vnd.rn-realplayer',
+		'roff' 		=> 'application/x-troff',
+		'rp' 		=> 'image/vnd.rn-realpix',
+		'rpm' 		=> 'audio/x-pn-realaudio-plugin',
+		'rt' 		=> 'text/vnd.rn-realtext',
+		'rtf' 		=> 'application/rtf',
+		'rtx' 		=> 'application/rtf',
+		'rv' 		=> 'video/vnd.rn-realvideo',
+		's' 		=> 'text/x-asm',
+		's3m' 		=> 'audio/s3m',
+		'saveme' 	=> 'application/octet-stream',
+		'sbk' 		=> 'application/x-tbook',
+		'scm' 		=> 'text/x-script.scheme',
+		'sdml' 		=> 'text/plain',
+		'sdp' 		=> 'application/x-sdp',
+		'sdr' 		=> 'application/sounder',
+		'sea' 		=> 'application/x-sea',
+		'set' 		=> 'application/set',
+		'sgm' 		=> 'text/x-sgml',
+		'sgml' 		=> 'text/x-sgml',
+		'sh' 		=> 'text/x-script.sh',
+		'shar' 		=> 'application/x-shar',
+		'shtml' 	=> 'text/html',
+		'sid' 		=> 'audio/x-psid',
+		'sit' 		=> 'application/x-sit',
+		'sit' 		=> 'application/x-stuffit',
+		'skd' 		=> 'application/x-koan',
+		'skm' 		=> 'application/x-koan',
+		'skp' 		=> 'application/x-koan',
+		'skt' 		=> 'application/x-koan',
+		'sl' 		=> 'application/x-seelogo',
+		'smi' 		=> 'application/smil',
+		'smil' 		=> 'application/smil',
+		'snd' 		=> 'audio/basic',
+		'sol' 		=> 'application/solids',
+		'spc' 		=> 'application/x-pkcs7-certificates',
+		'spc' 		=> 'text/x-speech',
+		'spl' 		=> 'application/futuresplash',
+		'spr' 		=> 'application/x-sprite',
+		'sprite' 	=> 'application/x-sprite',
+		'src' 		=> 'application/x-wais-source',
+		'ssi' 		=> 'text/x-server-parsed-html',
+		'ssm' 		=> 'application/streamingmedia',
+		'sst' 		=> 'application/vnd.ms-pki.certstore',
+		'step' 		=> 'application/step',
+		'stl' 		=> 'application/vnd.ms-pki.stl',
+		'stl' 		=> 'application/x-navistyle',
+		'stp' 		=> 'application/step',
+		'sv4cpio' 	=> 'application/x-sv4cpio',
+		'sv4crc' 	=> 'application/x-sv4crc',
+		'svf' 		=> 'image/x-dwg',
+		'svr' 		=> 'x-world/x-svr',
+		'swf' 		=> 'application/x-shockwave-flash',
+		't' 		=> 'application/x-troff',
+		'talk' 		=> 'text/x-speech',
+		'tar' 		=> 'application/x-tar',
+		'tbk' 		=> 'application/toolbook',
+		'tcl' 		=> 'text/x-script.tcl',
+		'tcsh' 		=> 'text/x-script.tcsh',
+		'tex' 		=> 'application/x-tex',
+		'texi' 		=> 'application/x-texinfo',
+		'texinfo' 	=> 'application/x-texinfo',
+		'text' 		=> 'text/plain',
+		'tgz' 		=> 'application/x-compressed',
+		'tif' 		=> 'image/tiff',
+		'tiff' 		=> 'image/tiff',
+		'tr' 		=> 'application/x-troff',
+		'tsi' 		=> 'audio/tsp-audio',
+		'tsp' 		=> 'audio/tsplayer',
+		'tsv' 		=> 'text/tab-separated-values',
+		'turbot' 	=> 'image/florian',
+		'txt' 		=> 'text/plain',
+		'ini' 		=> 'text/plain',
+		'sql' 		=> 'text/plain',
+		'uil' 		=> 'text/x-uil',
+		'uni' 		=> 'text/uri-list',
+		'unis' 		=> 'text/uri-list',
+		'unv' 		=> 'application/i-deas',
+		'uri' 		=> 'text/uri-list',
+		'uris' 		=> 'text/uri-list',
+		'ustar' 	=> 'application/x-ustar',
+		'ustar' 	=> 'multipart/x-ustar',
+		'uu' 		=> 'text/x-uuencode',
+		'uue' 		=> 'text/x-uuencode',
+		'vcd' 		=> 'application/x-cdlink',
+		'vcs' 		=> 'text/x-vcalendar',
+		'vda' 		=> 'application/vda',
+		'vdo' 		=> 'video/vdo',
+		'vew' 		=> 'application/groupwise',
+		'viv' 		=> 'video/vnd.vivo',
+		'vivo' 		=> 'video/vnd.vivo',
+		'vmd' 		=> 'application/vocaltec-media-desc',
+		'vmf' 		=> 'application/vocaltec-media-file',
+		'voc' 		=> 'audio/x-voc',
+		'vos' 		=> 'video/vosaic',
+		'vox' 		=> 'audio/voxware',
+		'vqe' 		=> 'audio/x-twinvq-plugin',
+		'vqf' 		=> 'audio/x-twinvq',
+		'vql' 		=> 'audio/x-twinvq-plugin',
+		'vrml' 		=> 'application/x-vrml',
+		'vrml' 		=> 'x-world/x-vrml',
+		'vrt' 		=> 'x-world/x-vrt',
+		'vsd' 		=> 'application/x-visio',
+		'vst' 		=> 'application/x-visio',
+		'vsw' 		=> 'application/x-visio',
+		'w60' 		=> 'application/wordperfect6.0',
+		'w61' 		=> 'application/wordperfect6.1',
+		'w6w' 		=> 'application/msword',
+		'wav' 		=> 'audio/wav',
+		'wb1' 		=> 'application/x-qpro',
+		'wbmp' 		=> 'image/vnd.wap.wbmp',
+		'web' 		=> 'application/vnd.xara',
+		'wiz' 		=> 'application/msword',
+		'wk1' 		=> 'application/x-123',
+		'wmf' 		=> 'windows/metafile',
+		'wml' 		=> 'text/vnd.wap.wml',
+		'wmlc' 		=> 'application/vnd.wap.wmlc',
+		'wmls' 		=> 'text/vnd.wap.wmlscript',
+		'wmlsc' 	=> 'application/vnd.wap.wmlscriptc',
+		'word' 		=> 'application/msword',
+		'wp' 		=> 'application/wordperfect',
+		'wp5' 		=> 'application/wordperfect',
+		'wp6' 		=> 'application/wordperfect',
+		'wpd' 		=> 'application/wordperfect',
+		'wq1' 		=> 'application/x-lotus',
+		'wri' 		=> 'application/mswrite',
+		'wrl' 		=> 'x-world/x-vrml',
+		'wrz' 		=> 'x-world/x-vrml',
+		'wsc' 		=> 'text/scriplet',
+		'wsrc' 		=> 'application/x-wais-source',
+		'wtk' 		=> 'application/x-wintalk',
+		'xbm' 		=> 'image/xbm',
+		'xdr' 		=> 'video/x-amt-demorun',
+		'xgz' 		=> 'xgl/drawing',
+		'xif' 		=> 'image/vnd.xiff',
+		'xl' 		=> 'application/excel',
+		'xla' 		=> 'application/excel',
+		'xlb' 		=> 'application/excel',
+		'xlb' 		=> 'application/vnd.ms-excel',
+		'xlc' 		=> 'application/excel',
+		'xlc' 		=> 'application/vnd.ms-excel',
+		'xld' 		=> 'application/x-excel',
+		'xlk' 		=> 'application/x-excel',
+		'xll' 		=> 'application/vnd.ms-excel',
+		'xlm' 		=> 'application/vnd.ms-excel',
+		'xlm' 		=> 'application/x-excel',
+		'xls' 		=> 'application/vnd.ms-excel',
+		'xlt' 		=> 'application/excel',
+		'xlt' 		=> 'application/x-excel',
+		'xlv' 		=> 'application/x-excel',
+		'xlw' 		=> 'application/vnd.ms-excel',
+		'xm' 		=> 'audio/xm',
+		'xml' 		=> 'application/xml',
+		'xmz' 		=> 'xgl/movie',
+		'xpix' 		=> 'application/x-vnd.ls-xpix',
+		'xpm' 		=> 'image/xpm',
+		'x-png' 	=> 'image/png',
+		'xsr' 		=> 'video/x-amt-showrun',
+		'xwd' 		=> 'image/x-xwd',
+		'xyz' 		=> 'chemical/x-pdb',
+		'z' 		=> 'application/x-compressed',
+		'zip' 		=> 'application/zip',
+		'zoo' 		=> 'application/octet-stream',
+		'zsh' 		=> 'text/x-script.zsh'
+	    ] ;
+
+
+
+	public function  __construct ( )
+	   {
+	    }
+    }
+
+
+/*==============================================================================================================
+
+    Mail -
+        A class for sending emails.
+
+  ==============================================================================================================*/
+class	Mail		extends  MailObject
+   {
+	// A list of common mime types
+	public  	$To				=  [],				// Recipient list
+			$CC				=  [],				// CC list
+			$BCC				=  [] ;				// BCC list
+	public  	$From				=  false,			// Originator
+			$ReplyTo			=  false,			// Reply to address
+			$ErrorsTo			=  false,			// Address where errors are to be redirected
+			$ReturnPath			=  false,			// Returns path
+			$ReturnReceiptTo		=  false ;			// Email address of the return receipt recipient
+	public  	$Subject			=  '(no subject)' ;		// Email subject
+	public  	$Text				=  '',				// Text and html versions
+			$Html				=  '',
+			$HtmlBasePath			=  false ;			// Html base path for links
+	public		$SourceCharset			=  'ISO8859-1',			// Source and destination character sets
+			$DestinationCharset		=  'ISO8859-1' ; 
+
+	protected  	$Attachments			=  [] ;				// Attachments (including inline ones)
+	protected	$MimeHeaders			=				// Additional MIME headers
+			   [
+				'MIME-Version'		=>  '1.0',
+				'X-Mailer'		=>  'PHP/Thrak',
+				'X-Priority'		=>  3
+			    ] ;
+
+	// This flag prevents inline images to be processed more than once, for example when the GetContents() or
+	// Send() methods are called more than once.
+	private		$InlineImageIndex		=  1 ;
+
+	
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        Constructor
+	 
+	    PROTOTYPE
+	        $mail	=  new Mail ( $from = false, $to = false, $subject = false, $text = false, $html = false, 
+					$html_base = false )
+	 
+	    DESCRIPTION
+	        Creates a Mail object.
+	 
+	    PARAMETERS
+	        $from (string) -
+	                Address of the email originator.
+
+		$to (mixed) -
+			String representing an email address, or array of email addresses.
+
+		$subject (string) -
+			Mail subject.
+
+		$text (string) -
+			Text (ascii) contents.
+
+		$html (string) -
+			Html contents.
+
+		$html_base (string)
+			Path to be used for relative links from the $html string (mainly images).
+	 
+	    NOTES
+	        If $text is specified but not $html, the mail will be sent as a pure SMTP mail. Otherwise, it will be
+		sent as a MIME-format mail, including a text part if $text is specified.
+	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  __construct ( $from = false, $to = false, $subject = false, $text = false, $html = false, $html_base = false )
+	   {
+		parent::__construct ( ) ;
+
+		// Initialize properties using what has been specified to the constructor
+		if  ( ! empty ( $from ) )
+			$this -> From	=  $from ;
+
+		if  ( ! empty ( $to ) )
+			$this -> AddRecipient ( $to ) ;
+
+		if  ( ! empty ( $subject ) )
+			$this -> Subject	=  $subject ;
+
+		if  ( ! empty ( $text ) )
+			$this -> Text		=  $text ;
+
+		if  ( ! empty ( $html ) )
+			$this -> Html		=  $this -> ExtractHtmlContents ( $html ) ;
+
+		if  ( ! empty ( $html_base ) )
+			$this -> HtmlBasePath	=  $html_base ;
+	    }
+
+
+	public function  __tostring ( )
+	   { return ( $this -> GetContents ) ; }
+
+
+	/**************************************************************************************************************
+	 **************************************************************************************************************
+	 **************************************************************************************************************
+	 ******                                                                                                  ******
+	 ******                                                                                                  ******
+	 ******                                      HELPER FUNCTIONS                                            ******
+	 ******                                                                                                  ******
+	 ******                                                                                                  ******
+	 **************************************************************************************************************
+	 **************************************************************************************************************
+	 **************************************************************************************************************/
+
+	// add_attachment -
+	//	Adds an attachment to this email.
+	private function  add_attachment ( $path )
+	   { $this -> Attachments []  =  new MailFileAttachment ( $path ) ; }
+
+
+	// add_email -
+	//	Adds an email to the specified array, if it does not exist.
+	private function  add_email ( $property, $email )
+	   {
+		$array		=  &$this -> $property ;
+
+		foreach  ( $array  as  $item )
+		   {
+			if  ( ! strcasecmp ( $item, $email ) )
+				return ;
+		    }
+
+		$array []	=  $email ;
+	    }
+
+
+	// add_emails -
+	//	Adds emails to the specified array. The argument list can contain strings and arrays of strings.
+	private function  add_emails ( $property, $argv )
+	   {
+		foreach  ( $argv  as  $arg )
+		   {
+			if  ( is_array ( $arg ) )
+				$this -> add_emails ( $property, $arg ) ;
+			else
+				$this -> add_email ( $property, $arg ) ;
+		    }
+	    }
+
+
+	// add_mime_header -
+	//	Called by the AddMimeHeader() function.
+	private function  add_mime_header ( &$array, $name, $value, $replace = true )
+	   {
+		foreach  ( $array  as  $mime_name => $junk )
+		   {
+			if  ( ! strcasecmp ( $mime_name, $name ) )
+			   {
+				if  ( $replace )
+					$array [ $mime_name ]	=  $value ;
+
+				return ;
+			    }
+		    }
+
+		$array [ $name ]	=  $value ;
+
+	    }
+
+
+	// encode_charset -
+	//	Encodes from the source to the destination character set defined for this mail instance.
+	private function  encode_charset ( $data )
+	   {
+		if  ( strcasecmp ( $this -> SourceCharset, $this -> DestinationCharset ) )
+		   {
+			$data	=  icon ( $this -> SourceCharset, $this -> DestinationCharset, $data ) ;
+		    }
+
+		return ( $data ) ;
+	    }
+
+
+	/**************************************************************************************************************
+	 **************************************************************************************************************
+	 **************************************************************************************************************
+	 ******                                                                                                  ******
+	 ******                                                                                                  ******
+	 ******                                      PUBLIC FUNCTIONS                                            ******
+	 ******                                                                                                  ******
+	 ******                                                                                                  ******
+	 **************************************************************************************************************
+	 **************************************************************************************************************
+	 **************************************************************************************************************/
+
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        AddRecipient, AddCC, AddBCC - Adds recipients to the email.
+	 
+	    PROTOTYPE
+	        $mail -> AddRecipient	( args... ) ;
+	        $mail -> AddCC		( args... ) ;
+	        $mail -> AddBCC		( args... ) ;
+	 
+	    DESCRIPTION
+	        Adds destinations to the email. AddRecipient() adds email recipients ; AddCC() add carbon-copy recipients,
+		and AddBCC() adds blind carbon-copy recipients.
+	 
+	    PARAMETERS
+	        $args (any) -
+	                An unlimited number of arguments, which can be :
+			- Strings containing an email address
+			- Arrays of strings containing a list of email addresses.
+	 	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  AddRecipient ( )
+	   { $this -> add_emails ( 'To', func_get_args ( ) ) ; }
+
+	public function  AddCC ( )
+	   { $this -> add_emails ( 'CC', func_get_args ( ) ) ; }
+
+	public function  AddBCC ( )
+	   { $this -> add_emails ( 'BCC', func_get_args ( ) ) ; }
+
+
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        AddMimeHeader - Adds or replaces an existing MIME header.
+	 
+	    PROTOTYPE
+	        $email -> AddMimeHeader ( $name, $value, $replace = true ) ;
+	 
+	    DESCRIPTION
+	        Adds the specfied MIME header or replaces an existing one.
+	 
+	    PARAMETERS
+	        $name (string) -
+	                Mime header name.
+
+		$value (string) -
+			Mime header value.
+
+		$replace (boolean) -
+			The header, if it exists, will only be replaced if this parameter is true (otherwise nothing
+			happens).
+	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  AddMimeHeader ( $name, $value, $replace = true )
+	   {
+		$this -> add_mime_header ( $this -> MimeHeaders, $name, $value, $replace ) ;
+	    }
+
+
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        AddAttachment, AddInlineAttachment - Adds email attachments.
+	 
+	    PROTOTYPE
+	        $email -> AddAttachment ( $path, $name = false ) ;
+		$email -> AddInlineAttachment ( $name, $contents ) ;
+	 
+	    DESCRIPTION
+	        Adds attachments to the current email.
+	 
+	    PARAMETERS
+		$path (string) -
+			Path to the external image file.
+
+		$name (string) -
+			The name that will be used to identify the attached file in the sent email.
+   
+		$contents (string) -
+			Contents to be attached inline.
+
+	    NOTES
+		AddInlineAttachment() is a protected method, since its use is mainly related to embedded images in
+		HTML contents. It would be of no use to the (honest) caller to embed contents that are not accessible by
+		the user.
+	 	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  AddAttachment ( $path, $name = false )
+	   {
+		$this -> Attachments []  =  new MailFileAttachment ( $path, $name ) ;
+	    }
+
+	
+	protected function  AddInlineAttachment ( $path, $contents ) 
+	   {
+		// Don't add an inline attachment twice - just reuse a reference to the existing one, if any
+		foreach  ( $this -> Attachments  as  $attachment )
+		   {
+			if  ( $attachment -> Inline )
+			   {
+				if  ( ! strcmp ( $attachment -> Filename, $path ) )
+					return ( $attachment -> AttachmentId ) ;
+			    }
+		    }
+
+		$cid			 =  "ATTIMG" . $this -> InlineImageIndex ;
+		$this -> Attachments []  =  new MailInlineAttachment ( $path, $cid, $contents ) ; 
+		$this -> InlineImageIndex ++ ;
+
+		return ( $cid ) ;
+	    }
+
+
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        GetContents - Retrieves current mail contents
+	 
+	    PROTOTYPE
+	        $str	=  $mail -> GetContents ( ) ;
+	 
+	    DESCRIPTION
+	        Retrieves the MIME part of the current mail contents.
+	 
+	    RETURN VALUE
+	        A string containing the data that will be passed to the PHP mail() function.
+	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  GetContents ( )
+	   {
+		$result		=  $this -> GetMimeHeaders ( ) . self::$EOL . $this -> GetBody ( ) ;
+
+		return ( $result ) ;
+	    }
+
+
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        LoadHtml - Loads Html contents from a file.
+	 
+	    PROTOTYPE
+	        $mail -> LoadHtml ( $file, $base_path = false ) ;
+	 
+	    DESCRIPTION
+	        Loads Html contents from an external file.
+
+	    PARAMETERS
+		$file (string) -
+			Html file.
+
+		$base_path (string) -
+			If specified, indicates the root path to external images referenced in the html code in $file.
+			When false, the directory of the html file is used as the root.
+	 
+	    RETURN VALUE
+	        A string containing the data that will be passed to the PHP mail() function.
+	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  LoadHtml ( $file, $base_path = false )
+	   {
+		if  ( ! file_exists ( $file ) )
+			throw ( new MailException ( "File \"$file\" does not exist." ) ) ;
+
+		$this -> Html		=  $this -> ExtractHtmlContents ( file_get_contents ( $file ) ) ;
+		$this -> HtmlBasePath	=  ( $base_path ) ?  $base_path : dirname ( $file ) ;
+	    }
+
+
+	/*--------------------------------------------------------------------------------------------------------------
+	 
+	    NAME
+	        Send - Sends this mail.
+	 
+	    PROTOTYPE
+	        $mail -> Send ( ) ;
+	 
+	    DESCRIPTION
+	        Sends the current mail using the PHP mail() function.
+	 
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function  Send ( )
+	   {
+		// Create the mail header and body
+		$headers	=  $this -> GetMimeHeaders ( ) ;
+		$body		=  $this -> GetBody ( ) ;
+
+		// Create the list of recipients (a list of comma-separated email addresses)
+		$to		=  implode ( ", ", $this -> To ) ;
+
+		// Send the mail
+		$status = @mail ( $to, $this -> Subject, $body, $headers ) ;
+
+		if  ( $status  ===  false )
+			throw ( new MailException ( error_get_last ( ) ) ) ;
+	    }
+
+
+	/*--------------------------------------------------------------------------------------------------------------
+
+	    NAME
+	  	Validate - Checks that all the mail fields are ok.
+		
+	    PROTOTYPE
+		$email -> Validate ( ) ;
+		
+	    DESCRIPTION
+		Verifies the supplied email data :
+		- At least one recipient must have been specified
+		- The email originator must have been specified
+		
+		It also provides default values for certain fields :
+		- If the Subject field is empty, it will be set to "(No subject)" 
+		- If the ReplyTo and ErrorsTo fields are empty, they will be set to the email
+		  originator.
+		- If the HTML content part is empty but not the text content part, HTML contents will
+		  be set to text contents (or vice-versa).
+		- If both content parts are empty, the string "*** EMPTY MESSAGE ***" will be inserted.
+		 				
+	 *-------------------------------------------------------------------------------------------------------------*/
+	public function Validate ( ) 
+	   {
+	   	//***********************************************************************  Checkings
+		// Check that at least one recipient has been specified
+		if  ( ! count ( $this -> To ) )
+			throw ( new MailException ( "No email recipient has been specified." ) ) ;
+		 
+		// Check that the mail originator has been specified    
+		// If not, check for the sendmail_from entry of php.ini
+		if  ( ! count ( $this -> From ) )
+		    {
+			$from	=  php_ini_get ( 'sendmail_from' ) ;
+
+			if  ( $from ) 
+				$this -> From	=  $from ;
+			else
+				throw ( new MailException ( "No email originator has been specified." ) ) ;
+		     }
+
+		// Check that the base path, if any, corresponds to an existing directory
+		if  ( $this -> HtmlBasePath  &&  ! is_dir ( $this -> HtmlBasePath ) )
+			throw ( new MailException ( "Html base contents directory \"{$this -> HtmlBasePath}\" is not a valid directory." ) ) ;
+		    
+	   	//***********************************************************************  Adjustments
+		// If no originator, try the sendmail_from entry of php.ini
+		if  ( ! $this -> From )
+		   {
+			$from	=  ini_get ( 'sendmail_from' ) ;
+
+			if  ( ! $from )
+				throw ( new MailException ( "The sendmail_from entry of your php.ini is not defined or is empty." ) ) ;
+
+			$this -> From	=  $from ;
+		    }
+
+		// If no subject has been specified, provide a default one
+		if  ( ! $this -> Subject )
+			$this -> Subject = "(no subject)" ;
+		
+		// If no Reply-To address has been specified, provide a default one using the From field
+		if  ( ! $this -> ReplyTo )
+			$this -> ReplyTo = $this -> From ;
+			
+		// Same for Errors-To Mime field
+		if  ( ! $this -> ErrorsTo )
+			$this -> ErrorsTo = $this -> From ;
+	
+		// If no text or html message, provide a default one
+		if  ( ! $this -> Text  &&  ! $this -> Html )
+			$this -> Text = "***  EMPTY MESSAGE  ***" ;
+			
+		// If there is an Html part but no text part, create a text part by textifying the
+		// html part
+		if  ( ! $this -> Text  &&  $this -> Html )
+			$this -> Text = strip_tags ( preg_replace ( "/(.*<body[^>]*>)|(<\/body[^>]*>.*)/si", '', $this -> Html ) ) ;
+	    }
+
+
+	/**************************************************************************************************************
+	 **************************************************************************************************************
+	 **************************************************************************************************************
+	 ******                                                                                                  ******
+	 ******                                                                                                  ******
+	 ******                                     PROTECTED FUNCTIONS                                          ******
+	 ******                                                                                                  ******
+	 ******                                                                                                  ******
+	 **************************************************************************************************************
+	 **************************************************************************************************************
+	 **************************************************************************************************************/
+
+	// ExtractHtmlContents -
+	//	Extract <style> and <body> contents from an html string.
+	protected function  ExtractHtmlContents ( $html )
+	   {
+		$result		=  '' ;
+		
+		if  ( preg_match ( '#<head> (?P<head> .*?) </head>#imsx', $html, $head_match ) )
+		   {
+			if  ( preg_match_all ( '#(?P<style> <style> .*? </style>)#imsx', $head_match [ 'head' ], $style_matches ) )
+				$result		.=  implode ( "\n", $style_matches [ 'style' ] ) . "\n" ;
+		    }
+		
+		if  ( preg_match ( '#<body> (?P<body> .*?) </body#imsx', $html, $body_match ) )
+		   {
+			$result		.=  $body_match [ 'body' ] ;
+		    }
+
+		// No <head> or <body> tags, simply use the supplied html contents
+		if  ( ! $result ) 
+			$result		=  $html ;
+
+			echo "$result\n" ;
+		return ( $result ) ;
+	    }
+
+
+	// GetMimeBoundary -
+	//	Generates a MIME boundary id.
+	protected function  GetMimeBoundary ( $id )
+	   {
+		$bid	=  '___THRAKMAIL_' . sprintf ( '%03d', $id ) . '___' ;
+
+		return ( $bid ) ;
+	    }
+
+
+	// GetMailId -
+	//	Returns a unique mail id.
+	protected function  GetMailId ( )
+	   {
+		$now	=  date ( 'r' ) ;
+		$id	=  md5 ( $now . " - Random ID = " . rand ( 0, PHP_INT_MAX ) ) ;
+
+		return ( $id ) ;
+	    }
+
+
+	// GetMimeAddressField -
+	//	Builds a MIME address header (From:, CC:, BCC:) from an address list.
+	protected function  GetMimeAddressList ( $addresses ) 
+	   {
+		$count	=  count ( $addresses ) ;
+
+		if  ( ! $count )
+			return ( false ) ;
+
+		$list		=  [] ;
+
+		foreach ( $addresses  as  $address )
+			$list []	=  '<' . $address . '>' ;
+  
+		$data	       =  implode ( ',' . self::$EOL . "\t", $list )  ;
+
+		return ( $data ) ;
+	    }
+
+
+	// GetMimeHeaders -
+	//	Retrieves the MIME headers (first part of smtp DATA).
+	protected function  GetMimeHeaders ( )
+	   {
+		$this -> Validate ( ) ;
+
+		$headers	=  $this -> MimeHeaders ;
+		
+		// Return path
+		$this -> add_mime_header ( $headers, 'Reply-To', '<' . $this -> ReplyTo . '>', true ) ;
+		
+		// "From" field. Note that the address could be preceded with a display name enclosed in quotes.
+		$this -> add_mime_header ( $headers, 'From', '<' . $this -> From . '>', true ) ;
+
+		// List of recipients - Well, they are already specified to the mail() function.
+		// No impact on Windows since the smtp server seems to ignore duplicate recipients.
+		// Postfix, however, do not ignore them...
+		// $this -> add_mime_header ( $headers, 'To', $this ->  GetMimeAddressList ( $this -> To ) ) ;
+		
+		// List of carbon copy users
+		if  ( count ( $this -> CC ) )
+			$this -> add_mime_header ( $headers, 'CC', $this ->  GetMimeAddressList ( $this -> CC ) ) ;
+		
+		// List of blind copy users
+		if  ( count ( $this -> BCC ) )
+			$this -> add_mime_header ( $headers, 'BCC', $this ->  GetMimeAddressList ( $this -> BCC ) ) ;
+		
+		// Subject field
+		$this -> add_mime_header ( $headers, 'Subject', $this -> Subject, true ) ;
+		
+		// Date field of the following form : "Mon, 03 Nov 2003 22:44:07 +0100"
+		$this -> add_mime_header ( $headers, 'Date', date ( 'r' ), true ) ;
+		
+		// Message ID field
+		$this -> add_mime_header ( $headers, 'Message-ID', $this -> GetMailID ( ), true ) ;
+
+		// Return path
+		if  ( $this -> ReturnPath )
+			$this -> add_mime_header ( $headers, 'Return-Path', $this -> ReturnPath, true ) ;
+
+		// Return receipt to
+		if  ( $this -> ReturnReceiptTo )
+			$this -> add_mime_header ( $headers, 'Return-Receipt-To', $this -> ReturnReceiptTo, true ) ;
+		
+		// Address where errors are to be redirected
+		if  ( $this -> ErrorsTo )
+			$this -> add_mime_header ( $headers, 'Errors-To', $this -> ErrorsTo, true ) ;
+
+		// The X-auth-smtp-user and X-abuse-contact fields are required for hotmail.
+		// Take them from the return path first, or return receipt if empty, or else take the originator email
+		if  ( $this -> ReturnPath )
+			$xmail = $this -> ReturnPath ;
+		else if  ( $this -> ReturnReceiptTo )
+			$xmail = $this -> ReturnReceiptTo ;
+		else
+			$xmail = $this -> From ;
+			
+		$this -> add_mime_header ( $headers, 'X-auth-smtp-user', $xmail, true ) ;
+		$this -> add_mime_header ( $headers, 'X-abuse-contact', $xmail, true ) ; 
+
+		// Build header string
+		$list		=  [] ;
+
+		foreach  ( $headers  as  $name => $value )
+			$list []	=  "$name: $value" ;
+
+		$result		=  implode ( self::$EOL, $list ) . self::$EOL ;
+
+		// Content description
+		$result .= "Content-Type: multipart/mixed;" . self::$EOL . "\t" .
+			   'boundary="' . $this -> GetMimeBoundary ( 1 ) . '"' . self::$EOL ;
+
+		// All done, return
+		return ( $result ) ;
+	     }
+
+
+	// GetBody -
+	//	Builds the body part of the MIME mail.
+	protected function  GetBody ( )
+	   {
+		$mime_boundary1		=  $this -> GetMimeBoundary ( 1 ) ;
+		$mime_boundary2		=  $this -> GetMimeBoundary ( 2 ) ;
+		$mime_boundary3		=  $this -> GetMimeBoundary ( 3 ) ;
+		$body			=  '' ;
+		$dash			=  '--' ;
+		$eol			=  self::$EOL ;
+		
+		// Mime comment
+		$body	.= self::$MimeIntroduction . self::$EOL . self::$EOL ;
+
+		/***
+		 	The general layout of a mail containing text and html versions, with attachments, is the following
+			for the Mail class :
+
+		  	--BOUNDARY1
+				Introduces the next sections, starting with --BOUNDARY2.
+				--BOUNDARY2
+					Introduces the text and html versions, starting with --BOUNDARY3. Of course,
+					additional content types could be added here.
+					--BOUNDARY3 
+						Text version
+					--BOUNDARY3
+						Html version
+					--BOUNDARY3--
+				--BOUNDARY2
+					attachment 1
+				--BOUNDARY2
+					attachment 2
+				...
+				--BOUNDARY2 
+					attachment n
+				--BOUNDARY2--
+			--BOUNDARY1--
+
+			Note that "--BOUNDARYx" start a new multipart entry, which is stopped when encountering the string
+			"--BOUNDARYx--" (ie, with two trailing dashes) followed by two crlf.
+
+			Attachments are encoded in base64.
+		 ***/
+
+		// Boundary 1 : really start the mail multiparts
+		$body		.=  "$dash$mime_boundary1$eol" ;
+
+		// Boundary 1 : Set the content type to multipart/related and specify the boundary string for its inner parts
+		$body		.=  "Content-Type: multipart/mixed;$eol\tboundary=\"$mime_boundary2\"$eol$eol$eol" ; 
+
+
+			// Boundary 2 : Introduces the multipart sections for text and html contents, and specify the boundary
+			//		delimiter for those parts.
+			$body		.=  "$dash$mime_boundary2$eol" ;
+			$body		.=  "Content-Type: multipart/alternative;$eol\tboundary=\"$mime_boundary3\"$eol$eol$eol" ;
+
+				// Boundary 3 (1/2) : Text message part
+				if  ( $this -> Text )
+				   {
+					$body	.=  "$dash$mime_boundary3$eol" ;
+					$body   .=  "Content-Type: text/plain;$eol\t" .
+						    "charset=\"{$this -> DestinationCharset}\"$eol" .
+						    "Content-Transfer-Encoding: quoted-printable$eol$eol" ;
+
+					$body	.=  quoted_printable_encode ( $this -> encode_charset ( $this -> Text ) ) . "$eol$eol$eol" ;
+				    }
+
+				// Boundary 3 (2/2) : Html message part
+				if  ( $this -> Html )
+				   {
+					$contents	=  $this -> PreprocessHtml ( $this -> encode_charset ( $this -> Html ) ) ;
+					
+					$body	.=  "$dash$mime_boundary3$eol" ;
+					$body   .=  "Content-Type: text/html;$eol\t" .
+						    "charset=\"{$this -> DestinationCharset}\"$eol" .
+						    "Content-Transfer-Encoding: 7bit$eol$eol" ;
+					$body	.=  "$contents$eol$eol$eol" ;
+				    }
+				    
+				// Boundary 3 end
+				$body	.=  "$dash$mime_boundary3$dash$eol$eol" ;
+			
+			// Boundary 2 : Attachments
+			foreach ( $this -> Attachments  as  $attachment )
+			   {
+				$contents	 =  $attachment -> GetMimeContents ( ) ; 
+				$body		.=  "$dash$mime_boundary2$eol$contents$eol$eol" ;
+			    }
+
+			// Boundary 2 end
+			$body	.=  "$dash$mime_boundary2$dash$eol$eol" ;
+
+		// Boundary 1 end
+		$body	.=  "$dash$mime_boundary1$dash$eol$eol" ;
+
+		// All done, return
+		return ( $body ) ;
+	    }
+
+
+	// PreprocessHtml -
+	//	Preprocesses links to images and files in html contents.
+	protected function  PreprocessHtml ( $contents )
+	   {
+		global		$SITE_ROOT ;
+		
+
+		$result   = $contents;//'' ;
+		
+		// If a base path has been specified, use it, otherwise use site's root instead
+		if  ( $this -> HtmlBasePath )
+			$basedir	=  $this -> HtmlBasePath ;
+		else
+			$basedir	=  $SITE_ROOT ;
+		
+		// Regex for matching the following :
+		//	. The src= attribute of an <img> tag, 
+		//	. The background-image:url() style
+		$re	=  '/
+				(
+					<img .+?
+					src=["\'] (?P<image> [^"\']+? ) ["\']
+				 ) |
+				(
+					background-image \s* : \s*
+					url \s* \(
+						(?P<image> [^)]+?)
+					\)
+				 ) |
+				(
+					background \s* : \s*
+					url \s* \(
+						(?P<image> [^)]+?)
+					\)
+				 )
+			    /imsx' ;
+		
+		// Match all occurrences of html tags that could contain links to images
+		if ( Regex::PregMatchAllEx ( $re, $contents, $matches, PREG_OFFSET_CAPTURE ) )
+		   {
+			$replacements	=  [] ;
+
+			// Process matches
+			foreach  ( $matches [ 'image' ]  as  $image )
+			   {
+				// Well, sometimes matches could yield either an empty string or a two-values array
+				// where the second one (the offset) is -1
+				if  ( is_array ( $image )  &&  $image [1]  !=  -1 )
+				   {
+					$file		=  $image [0] ;
+					$offset		=  $image [1] ;
+
+					// Ignore links that specify an absolute path or an url scheme
+					if  ( $file [0]  ==  '/'  ||  preg_match ( '#^[!:]://#', $file ) )
+						continue ;
+
+					// Final path should be the image filename with the HtmlBaseDir directory
+					$path		=  "$basedir/$file" ;
+					
+					// Warn if the file does not exist (but send the mail anyway)
+					if  ( ! file_exists ( $path ) )
+					   {
+						throw ( new MailException ( "Image \"$file\" not found." ) ) ;
+						continue ;
+					    }
+
+					// Build the inline attachment id
+					$cid			=  $this -> AddInlineAttachment ( $file, file_get_contents ( $path ) ) ;
+
+					// Add this entry to the list of strings to be subsituted
+					$replacements []	=  [ $file, "cid:$cid", $offset ] ;
+				    }
+			    }
+			
+			// Perform substitutions : replace image filenames with a cid
+			$result		=  Regex::MultiSubstrReplace ( $contents, $replacements ) ;
+		    }
+		else
+			$result		=  $contents ;
+
+		// All done, return
+		return ( $result ) ;
+	    }
+    }
+
+
+/*==============================================================================================================
+
+    MailAttachment class -
+        Abstract base class for external file attachments and internal attachments.
+	Only for internal use.
+
+  ==============================================================================================================*/
+abstract class  MailAttachment		extends  MailObject 
+   {
+	// Full path of the attachment
+	public		$Filename ;
+	// Attachment name, as will be displayed in the recipient's mail
+	public		$AttachmentName ;
+	// Unique attachment id
+	public		$AttachmentId ;
+	// To be set by derived classes : specifies whether the attachment should be inlined or not
+	public		$Inline			=  false ;
+
+
+	// Constructor -
+	//	Builds an attachment object.
+	public function  __construct ( $path, $name = false ) 
+	   {
+		parent::__construct ( ) ;
+
+		$this -> Filename		=  $path ;
+		$this -> AttachmentName		=  ( $name ) ?  basename ( $name ) : basename ( $path ) ;
+	    }
+
+
+	// GetContents -
+	//	Retrieves attachment contents. To be implemented by derived classes.
+	abstract public function  GetContents ( ) ;
+
+	
+	// IsInline -
+	//	Checks if this attachment is an inline attachment.
+	public function  IsInline ( )
+	   { return ( $this -> Inline ) ; }
+
+
+	// GetMimeContents -
+	//	Retrieves the attachment as a base64-encoded text to be included after a MIME boundary.
+	public function  GetMimeContents ( )
+	   {
+		$contents	=  base64_encode ( $this -> GetContents (  ) ) ;
+		$extension	=  strtolower ( pathinfo ( $this -> Filename, PATHINFO_EXTENSION ) ) ;
+		$mimetype	=  ( isset ( self::$MimeTypes [ $extension ] ) ) ?  self::$MimeTypes [ $extension ] : 'application/octet-stream' ;
+		$filename	=  basename ( $this -> AttachmentName ) ;
+		$nl		=  self::$EOL ;
+
+		if  ( $this -> Inline )
+			$extra	=  '' ;
+		else
+			$extra	=  ";$nl\tname=\"$filename\"" ;
+
+		$part	=  "Content-Type: $mimetype$extra$nl" .
+			   'Content-Transfer-Encoding: base64' . $nl .
+			   'Content-disposition: attachment ; filename="' . $filename . '"' . $nl .
+			   'Content-ID: <' . $this -> AttachmentId . '>' . $nl . $nl .
+			   chunk_split ( $contents, self::$MaxTextLength, $nl ) ;
+
+		return ( $part ) ;
+	    }
+
+
+	// __tostring -
+	//	Returns attachment contents.
+	public function  __tostring ( )
+	   { return ( $this -> GetContents ( ) ) ; }
+    }
+
+
+/*==============================================================================================================
+
+    MailFileAttachment -
+        Implements a mail attachment given by an external file.
+
+  ==============================================================================================================*/
+class  MailFileAttachment		extends  MailAttachment 
+   {
+	private		$Contents	=  false ;
+
+	public function  __construct ( $path, $name = false )
+	   {
+		if  ( ! file_exists ( $path ) )
+			throw ( new MailException ( "File \"$path\" does not exist." ) ) ;
+
+		parent::__construct ( $path, $name ) ;
+
+		$this -> AttachmentId		=  md5 ( date ( 'r' ) + ' - ' . rand ( 0, PHP_INT_MAX ) ) ;
+	    }
+
+
+	public function  GetContents ( )
+	   {
+		if  ( ! file_exists ( $this -> Filename ) )
+			throw ( new MailException ( "File attachment \"{$this -> Filename}\" has been deleted since it was added to this mail." ) ) ;
+
+		if  ( $this -> Contents  ===  false )
+			$this -> Contents	=  file_get_contents ( $this -> Filename ) ;
+
+		return ( $this -> Contents ) ; 
+	    }
+    }
+
+
+/*==============================================================================================================
+
+    MailInlineAttachment -
+        Implements an inline mail attachment whose contents are given by a string.
+
+  ==============================================================================================================*/
+class  MailInlineAttachment		extends  MailAttachment 
+   {
+	protected	$Contents ;
+
+
+	public function  __construct ( $path, $cid, $contents )
+	   {
+		$this -> Contents	=  $contents ;
+		$this -> Inline		=  true ;
+		$this -> AttachmentId	=  $cid ;
+
+		parent::__construct ( $path, basename ( $path ) ) ;
+	    }
+
+
+	public function  GetContents ( )
+	   { return ( $this -> Contents ) ; }
+    }
